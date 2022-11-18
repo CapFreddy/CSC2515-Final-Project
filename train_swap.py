@@ -49,10 +49,10 @@ if domain_classifier is not None:
     scheduler_domain = lr_scheduler.StepLR(optimizer_domain, step_size=100, gamma=0.1)
 criterion = nn.CrossEntropyLoss()
 
-def val_accuracy(final=False):
+def eval_accuracy(data_loader, final=False):
     total = 0
     correct = 0
-    for it, (batch, domain) in enumerate(val_loader):
+    for it, (batch, domain) in enumerate(data_loader):
         x = batch[0].to(device)
         x = x.reshape(opt.batch_size, -1)
         y = batch[1].to(device)
@@ -72,27 +72,28 @@ def val_accuracy(final=False):
     return correct / total
 
 
-def test_accuracy(final=False):
-    total = 0
-    correct = 0
-    for it, (batch, domain) in enumerate(test_loader):
-        x = batch[0].to(device)
-        x = x.reshape(opt.batch_size, -1)
-        y = batch[1].to(device)
-        if final == True:
-            if opt.final_cls == "same":
-                feature, _ = backbone(x, mode="test")
-            else:
-                _, feature = backbone(x, mode="test")
-            scores = final_classifier(feature)
-        else:
-            feature, _ = backbone(x, mode="test")
-            scores = cls_classifier(feature)
-        _, pred = scores.max(dim=1)
-        correct += torch.sum(pred.eq(y)).item()
-        total += x.shape[0]
-    return correct / total
+# def test_accuracy(final=False):
+#     total = 0
+#     correct = 0
+#     for it, (batch, domain) in enumerate(test_loader):
+#         x = batch[0].to(device)
+#         x = x.reshape(opt.batch_size, -1)
+#         y = batch[1].to(device)
+#         if final == True:
+#             if opt.final_cls == "same":
+#                 feature, _ = backbone(x, mode="test")
+#             else:
+#                 _, feature = backbone(x, mode="test")
+#             scores = final_classifier(feature)
+#         else:
+#             feature, _ = backbone(x, mode="test")
+#             scores = cls_classifier(feature)
+#         _, pred = scores.max(dim=1)
+#         correct += torch.sum(pred.eq(y)).item()
+#         total += x.shape[0]
+#     return correct / total
 
+train_accs = []
 val_accs = []
 test_accs = []
 for epoch in range(opt.n_epochs):
@@ -134,17 +135,21 @@ for epoch in range(opt.n_epochs):
     scheduler_cls.step()
     if domain_classifier is not None:
         scheduler_domain.step()
-    val_acc = val_accuracy()
-    test_acc = test_accuracy()
+    train_acc = eval_accuracy(data_loader=train_loader)
+    val_acc = eval_accuracy(data_loader=val_loader)
+    test_acc = eval_accuracy(data_loader=test_loader)
+    train_accs.append(train_acc)
     if epoch > opt.n_epochs // 2:
         val_accs.append(val_acc)
         test_accs.append(test_acc)
-    print("epoch : %d || loss : %f || val_acc : %f || test_acc : %f" % (epoch, loss, val_acc, test_acc))
-
+    print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
+          % (epoch, loss, train_acc, val_acc, test_acc))
+print("Best train_acc : %f and its test_acc : %f" % (max(train_accs), test_accs[train_accs.index(max(train_accs))]))
 print("Best val_acc : %f and its test_acc : %f" % (max(val_accs), test_accs[val_accs.index(max(val_accs))]))
 print("Best test_acc : %f" % max(test_accs))
 
 if opt.final_cls == "latent":
+    train_accs = []
     val_accs = []
     test_accs = []
     for epoch in range(opt.n_epochs // 2):
@@ -166,12 +171,15 @@ if opt.final_cls == "latent":
             loss.backward()
             optimizer_final.step()
         scheduler_final.step()
-        val_acc = val_accuracy(final=True)
-        test_acc = test_accuracy(final=True)
+        train_acc = eval_accuracy(data_loader=train_loader)
+        val_acc = eval_accuracy(data_loader=val_loader)
+        test_acc = eval_accuracy(data_loader=test_loader)
+        train_accs.append(train_acc)
         val_accs.append(val_acc)
         test_accs.append(test_acc)
-        print("epoch : %d || loss : %f || val_acc : %f || test_acc : %f" % (epoch, loss, val_acc, test_acc))
-
+        print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
+              % (epoch, loss, train_acc, val_acc, test_acc))
+    print("Best train_acc : %f and its test_acc : %f" % (max(train_accs), test_accs[train_accs.index(max(train_accs))]))
     print("Best val_acc : %f and its test_acc : %f" % (max(val_accs), test_accs[val_accs.index(max(val_accs))]))
     print("Best test_acc : %f" % max(test_accs))
 
