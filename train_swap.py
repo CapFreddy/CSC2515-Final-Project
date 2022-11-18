@@ -49,6 +49,7 @@ if domain_classifier is not None:
     scheduler_domain = lr_scheduler.StepLR(optimizer_domain, step_size=100, gamma=0.1)
 criterion = nn.CrossEntropyLoss()
 
+
 def eval_accuracy(data_loader, final=False):
     total = 0
     correct = 0
@@ -56,58 +57,50 @@ def eval_accuracy(data_loader, final=False):
         x = batch[0].to(device)
         x = x.reshape(opt.batch_size, -1)
         y = batch[1].to(device)
+        # y = torch.cat((y, y), dim=0)
         # feature = feature[:, :opt.latent_dim]
         if final == True:
-            if opt.final_cls == "same":
-                feature, _ = backbone(x, mode="test")
-            else:
-                _, feature = backbone(x, mode="test")
+            _, feature = backbone(x, mode="test")
             scores = final_classifier(feature)
         else:
             feature, _ = backbone(x, mode="test")
             scores = cls_classifier(feature)
         _, pred = scores.max(dim=1)
         correct += torch.sum(pred.eq(y)).item()
-        total += x.shape[0]
+        total += y.shape[0]
     return correct / total
 
 
-# def test_accuracy(final=False):
-#     total = 0
-#     correct = 0
-#     for it, (batch, domain) in enumerate(test_loader):
-#         x = batch[0].to(device)
-#         x = x.reshape(opt.batch_size, -1)
-#         y = batch[1].to(device)
-#         if final == True:
-#             if opt.final_cls == "same":
-#                 feature, _ = backbone(x, mode="test")
-#             else:
-#                 _, feature = backbone(x, mode="test")
-#             scores = final_classifier(feature)
-#         else:
-#             feature, _ = backbone(x, mode="test")
-#             scores = cls_classifier(feature)
-#         _, pred = scores.max(dim=1)
-#         correct += torch.sum(pred.eq(y)).item()
-#         total += x.shape[0]
-#     return correct / total
+def domain_accuracy(data_loader):
+    total = 0
+    correct = 0
+    for it, (batch, domain) in enumerate(data_loader):
+        x = batch[0].to(device)
+        x = x.reshape(opt.batch_size, -1)
+        domain = domain.to(device)
+        domain_swaped = torch.cat((domain[opt.batch_size // 2:], domain[opt.batch_size // 2:]), dim=0)
+        domain = torch.cat((domain, domain_swaped), dim=0)
+        feature, _ = backbone(x)
+        scores = domain_classifier(feature)
+        _, pred = scores.max(dim=1)
+        correct += torch.sum(pred.eq(domain)).item()
+        total += domain.shape[0]
+    return correct / total
 
 train_accs = []
 val_accs = []
 test_accs = []
+domain_accs = []
+domain_val_accs = []
 for epoch in range(opt.n_epochs):
     for it, (batch, domain) in enumerate(train_loader):
-        x = batch[0]
+        x = batch[0].to(device)
         x = x.reshape(opt.batch_size, -1)
-        y = batch[1]
-        if cuda:
-            x = x.cuda()
-            y = y.cuda()
-            domain = domain.cuda()
-            tmp = torch.clone(domain)
-            domain[:opt.batch_size // 2] = domain[opt.batch_size // 2:]
-            domain[opt.batch_size // 2:] = tmp[:opt.batch_size // 2]
+        y = batch[1].to(device)
+        y = torch.cat((y, y), dim=0)
+        domain = domain.to(device)
+        domain_swaped = torch.cat((domain[opt.batch_size // 2:], domain[opt.batch_size // 2:]), dim=0)
+        domain = torch.cat((domain, domain_swaped), dim=0)
 
         # feature, _ = backbone(x)
         if domain_classifier is not None:
@@ -138,15 +131,20 @@ for epoch in range(opt.n_epochs):
     train_acc = eval_accuracy(data_loader=train_loader)
     val_acc = eval_accuracy(data_loader=val_loader)
     test_acc = eval_accuracy(data_loader=test_loader)
+    domain_acc = domain_accuracy(data_loader=train_loader)
+    domain_val_acc = domain_accuracy(data_loader=val_loader)
     train_accs.append(train_acc)
-    if epoch > opt.n_epochs // 2:
-        val_accs.append(val_acc)
-        test_accs.append(test_acc)
-    print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
-          % (epoch, loss, train_acc, val_acc, test_acc))
+    val_accs.append(val_acc)
+    test_accs.append(test_acc)
+    domain_accs.append(domain_acc)
+    domain_val_accs.append(domain_val_acc)
+    print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f || domain_acc : % f || domain_val_acc : %f"
+          % (epoch, loss, train_acc, val_acc, test_acc, domain_acc, domain_val_acc))
 print("Best train_acc : %f and its test_acc : %f" % (max(train_accs), test_accs[train_accs.index(max(train_accs))]))
 print("Best val_acc : %f and its test_acc : %f" % (max(val_accs), test_accs[val_accs.index(max(val_accs))]))
 print("Best test_acc : %f" % max(test_accs))
+print("Best domain_acc : %f" % max(domain_accs))
+print("Best domain_val_acc : %f" % max(domain_val_accs))
 
 if opt.final_cls == "latent":
     train_accs = []
@@ -154,12 +152,10 @@ if opt.final_cls == "latent":
     test_accs = []
     for epoch in range(opt.n_epochs // 2):
         for it, (batch, domain) in enumerate(train_loader):
-            x = batch[0]
+            x = batch[0].to(device)
             x = x.reshape(opt.batch_size, -1)
-            y = batch[1]
-            if cuda:
-                x = x.cuda()
-                y = y.cuda()
+            y = batch[1].to(device)
+
             if opt.final_cls == "same":
                 feature, _ = backbone(x)
             else:
@@ -177,8 +173,9 @@ if opt.final_cls == "latent":
         train_accs.append(train_acc)
         val_accs.append(val_acc)
         test_accs.append(test_acc)
-        print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
-              % (epoch, loss, train_acc, val_acc, test_acc))
+        print(
+            "epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
+            % (epoch, loss, train_acc, val_acc, test_acc))
     print("Best train_acc : %f and its test_acc : %f" % (max(train_accs), test_accs[train_accs.index(max(train_accs))]))
     print("Best val_acc : %f and its test_acc : %f" % (max(val_accs), test_accs[val_accs.index(max(val_accs))]))
     print("Best test_acc : %f" % max(test_accs))

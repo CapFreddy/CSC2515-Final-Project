@@ -37,9 +37,13 @@ class MLP_Swap(nn.Module):
         batch_szie = feature.shape[0]
         latent_dim = feature.shape[1]
         if mode == "train":
-            feature_swaped = torch.clone(feature)
-            feature_swaped[0:batch_szie//2, latent_dim//2:] = feature[batch_szie//2:, latent_dim//2:]
-            feature_swaped[batch_szie//2:, latent_dim//2:] = feature[0:batch_szie//2, latent_dim//2:]
-            return self.mlp2(feature_swaped), feature[:, 0:latent_dim//2]
+            feature_swaped1 = torch.cat(
+                (feature[0:batch_szie//2, 0:latent_dim//2], feature[batch_szie//2:, latent_dim//2:]), dim=1)
+            feature_swaped2 = torch.cat(
+                (feature[batch_szie // 2:, 0:latent_dim // 2], feature[:batch_szie // 2, latent_dim // 2:]), dim=1)
+            feature = torch.cat((feature, feature_swaped1), dim=0)
+            feature = torch.cat((feature, feature_swaped2), dim=0)
+
+            return self.mlp2(feature), feature[:batch_szie, 0:latent_dim//2]
         else:
             return self.mlp2(feature), feature[:, 0:latent_dim//2]
