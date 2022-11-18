@@ -23,3 +23,23 @@ def domain_classifier(size, n_domains):
     layers = []
     layers += [nn.Linear(size, n_domains), nn.Softmax()]
     return nn.Sequential(*layers)
+
+
+class MLP_Swap(nn.Module):
+    def __init__(self, sizes):
+        super(MLP_Swap, self).__init__()
+
+        self.mlp1 = mlp(sizes[:-1])
+        self.mlp2 = mlp(sizes[-2:])
+
+    def forward(self, x, mode="train"):
+        feature = self.mlp1(x)
+        batch_szie = feature.shape[0]
+        latent_dim = feature.shape[1]
+        if mode == "train":
+            feature_swaped = torch.clone(feature)
+            feature_swaped[0:batch_szie//2, latent_dim//2:] = feature[batch_szie//2:, latent_dim//2:]
+            feature_swaped[batch_szie//2:, latent_dim//2:] = feature[0:batch_szie//2, latent_dim//2:]
+            return self.mlp2(feature_swaped), feature[:, 0:latent_dim//2]
+        else:
+            return self.mlp2(feature), feature[:, 0:latent_dim//2]
