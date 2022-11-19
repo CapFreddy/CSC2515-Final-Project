@@ -14,14 +14,16 @@ def mlp(sizes, activation=nn.ReLU):
 def cls_classifier(sizes):
     # Build a feedforward neural network.
     layers = []
-    layers += [nn.Linear(sizes, 10), nn.Softmax()]
+    # !Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument
+    # TODO: I set dim to 1, verify this
+    layers += [nn.Linear(sizes, 10), nn.Softmax(dim=1)]
     return nn.Sequential(*layers)
 
 
 def domain_classifier(size, n_domains):
     # Build a feedforward neural network.
     layers = []
-    layers += [nn.Linear(size, n_domains), nn.Softmax()]
+    layers += [nn.Linear(size, n_domains), nn.Softmax(dim=1)]
     return nn.Sequential(*layers)
 
 

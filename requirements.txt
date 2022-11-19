@@ -1,0 +1,5 @@
+wandb==0.13.5
+pathlib2
+tqdm
+nvgpu
+numpy
