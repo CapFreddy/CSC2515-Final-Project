@@ -1,0 +1,3 @@
+nvgpu
+pathlib2
+numpy

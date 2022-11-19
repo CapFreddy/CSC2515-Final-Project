@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from typing import List
 
-def mlp(sizes: List[int], activation: nn.Module=nn.ReLU) -> nn.Module:
+
+def mlp(sizes: List[int], activation: nn.Module = nn.ReLU) -> nn.Module:
     # Build a feedforward neural network.
     layers = []
     for j in range(len(sizes)-1):
