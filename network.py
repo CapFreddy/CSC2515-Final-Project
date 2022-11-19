@@ -26,24 +26,25 @@ def domain_classifier(size, n_domains):
 
 
 class MLP_Swap(nn.Module):
-    def __init__(self, sizes):
+    def __init__(self, sizes, class_dim=128, domain_dim=128):
         super(MLP_Swap, self).__init__()
-
+        assert sizes[-2] == class_dim + domain_dim
+        self.class_dim = class_dim
+        self.domain_dim = domain_dim
         self.mlp1 = mlp(sizes[:-1])
         self.mlp2 = mlp(sizes[-2:])
 
     def forward(self, x, mode="train"):
         feature = self.mlp1(x)
-        batch_szie = feature.shape[0]
-        latent_dim = feature.shape[1]
         if mode == "train":
+            batch_size = feature.shape[0]
             feature_swaped1 = torch.cat(
-                (feature[0:batch_szie//2, 0:latent_dim//2], feature[batch_szie//2:, latent_dim//2:]), dim=1)
+                (feature[0:batch_size//2, 0:self.class_dim], feature[batch_size//2:, self.class_dim:]), dim=1)
             feature_swaped2 = torch.cat(
-                (feature[batch_szie // 2:, 0:latent_dim // 2], feature[:batch_szie // 2, latent_dim // 2:]), dim=1)
+                (feature[batch_size // 2:, 0:self.class_dim], feature[:batch_size // 2, self.class_dim:]), dim=1)
             feature = torch.cat((feature, feature_swaped1), dim=0)
             feature = torch.cat((feature, feature_swaped2), dim=0)
 
-            return self.mlp2(feature), feature[:batch_szie, 0:latent_dim//2]
+            return self.mlp2(feature), feature[:batch_size, 0:self.class_dim]
         else:
-            return self.mlp2(feature), feature[:, 0:latent_dim//2]
+            return self.mlp2(feature), feature[:, 0:self.class_dim]
