@@ -17,6 +17,7 @@ parser.add_argument("--img_size", type=int, default=32, help="size of each image
 parser.add_argument("--target", type=str, default="syn", help="target domain")
 parser.add_argument("--baseline", type=bool, default=False, help="baseline method")
 parser.add_argument("--final_cls", type=str, default="latent", help="final classifier method")
+parser.add_argument("--alpha", type=float, default=0.5, help="hyperparameter of domain loss")
 opt = parser.parse_args()
 print(opt)
 
@@ -78,7 +79,7 @@ def domain_accuracy(data_loader):
         x = batch[0].to(device)
         x = x.reshape(opt.batch_size, -1)
         domain = domain.to(device)
-        domain_swaped = torch.cat((domain[opt.batch_size // 2:], domain[opt.batch_size // 2:]), dim=0)
+        domain_swaped = torch.cat((domain[opt.batch_size // 2:], domain[0:opt.batch_size // 2]), dim=0)
         domain = torch.cat((domain, domain_swaped), dim=0)
         feature, _ = backbone(x)
         scores = domain_classifier(feature)
@@ -99,7 +100,7 @@ for epoch in range(opt.n_epochs):
         y = batch[1].to(device)
         y = torch.cat((y, y), dim=0)
         domain = domain.to(device)
-        domain_swaped = torch.cat((domain[opt.batch_size // 2:], domain[opt.batch_size // 2:]), dim=0)
+        domain_swaped = torch.cat((domain[opt.batch_size // 2:], domain[0:opt.batch_size // 2]), dim=0)
         domain = torch.cat((domain, domain_swaped), dim=0)
 
         # feature, _ = backbone(x)
@@ -109,7 +110,7 @@ for epoch in range(opt.n_epochs):
             loss_cls = criterion(scores_cls, y)
             scores_domain = domain_classifier(feature)
             loss_domain = criterion(scores_domain, domain)
-            loss = loss_cls + 0.5 * loss_domain
+            loss = loss_cls + opt.alpha * loss_domain
         else:
             feature, _ = backbone(x, mode="baseline")
             scores = cls_classifier(feature)
@@ -128,18 +129,19 @@ for epoch in range(opt.n_epochs):
     scheduler_cls.step()
     if domain_classifier is not None:
         scheduler_domain.step()
-    train_acc = eval_accuracy(data_loader=train_loader)
-    val_acc = eval_accuracy(data_loader=val_loader)
-    test_acc = eval_accuracy(data_loader=test_loader)
-    domain_acc = domain_accuracy(data_loader=train_loader)
-    domain_val_acc = domain_accuracy(data_loader=val_loader)
-    train_accs.append(train_acc)
-    val_accs.append(val_acc)
-    test_accs.append(test_acc)
-    domain_accs.append(domain_acc)
-    domain_val_accs.append(domain_val_acc)
-    print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f || domain_acc : % f || domain_val_acc : %f"
-          % (epoch, loss, train_acc, val_acc, test_acc, domain_acc, domain_val_acc))
+    if epoch % 10 == 0 or epoch > 150:
+        train_acc = eval_accuracy(data_loader=train_loader)
+        val_acc = eval_accuracy(data_loader=val_loader)
+        test_acc = eval_accuracy(data_loader=test_loader)
+        domain_acc = domain_accuracy(data_loader=train_loader)
+        domain_val_acc = domain_accuracy(data_loader=val_loader)
+        train_accs.append(train_acc)
+        val_accs.append(val_acc)
+        test_accs.append(test_acc)
+        domain_accs.append(domain_acc)
+        domain_val_accs.append(domain_val_acc)
+        print("epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f || domain_acc : % f || domain_val_acc : %f"
+              % (epoch, loss, train_acc, val_acc, test_acc, domain_acc, domain_val_acc))
 print("Best train_acc : %f and its test_acc : %f" % (max(train_accs), test_accs[train_accs.index(max(train_accs))]))
 print("Best val_acc : %f and its test_acc : %f" % (max(val_accs), test_accs[val_accs.index(max(val_accs))]))
 print("Best test_acc : %f" % max(test_accs))
@@ -167,15 +169,16 @@ if opt.final_cls == "latent":
             loss.backward()
             optimizer_final.step()
         scheduler_final.step()
-        train_acc = eval_accuracy(data_loader=train_loader)
-        val_acc = eval_accuracy(data_loader=val_loader)
-        test_acc = eval_accuracy(data_loader=test_loader)
-        train_accs.append(train_acc)
-        val_accs.append(val_acc)
-        test_accs.append(test_acc)
-        print(
-            "epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
-            % (epoch, loss, train_acc, val_acc, test_acc))
+        if epoch % 10 == 0 or epoch > 50:
+            train_acc = eval_accuracy(data_loader=train_loader, final=True)
+            val_acc = eval_accuracy(data_loader=val_loader, final=True)
+            test_acc = eval_accuracy(data_loader=test_loader, final=True)
+            train_accs.append(train_acc)
+            val_accs.append(val_acc)
+            test_accs.append(test_acc)
+            print(
+                "epoch : %d || loss : %f || train_acc : %f || val_acc : %f || test_acc : %f"
+                % (epoch, loss, train_acc, val_acc, test_acc))
     print("Best train_acc : %f and its test_acc : %f" % (max(train_accs), test_accs[train_accs.index(max(train_accs))]))
     print("Best val_acc : %f and its test_acc : %f" % (max(val_accs), test_accs[val_accs.index(max(val_accs))]))
     print("Best test_acc : %f" % max(test_accs))
