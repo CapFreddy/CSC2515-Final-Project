@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument('--num_latent_epochs', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--weight_decay', type=float, default=1e-3)
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--finetune_lr', type=float, default=1e-5)
 

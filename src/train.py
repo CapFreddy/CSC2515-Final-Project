@@ -20,7 +20,7 @@ def train_object_domain_model(model, train_loader, val_loader, test_loader, args
     # Method 1/2/3-1
     model.to(args.device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
 
     best_val_acc = 0.
