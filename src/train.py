@@ -60,11 +60,13 @@ def train_latent_object_model(model, train_loader, val_loader, test_loader, args
     criterion = nn.CrossEntropyLoss()
     if args.finetune:
         optimizer = optim.Adam([{'params': model.encoder.parameters(), 'lr': args.finetune_lr},
-                                {'params': model.object_clf.parameters()}], lr=args.lr)
+                                {'params': model.object_clf.parameters()}],
+                               lr=args.lr,
+                               weight_decay=args.weight_decay)
     else:
         for param in model.encoder.parameters():
             param.requires_grad = False
-        optimizer = optim.Adam(model.object_clf.parameters(), lr=args.lr)
+        optimizer = optim.Adam(model.object_clf.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
 
     train_losses, val_object_accs, test_accs = [], [], []
