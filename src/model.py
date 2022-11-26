@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd  import  Function
 
 
 class ObjectDomainClassifier(nn.Module):
@@ -100,3 +101,45 @@ class DomainAwareEncoder(nn.Module):
             x = F.relu(self.linears[i](x))
 
         return x
+
+class GradReverse(torch.autograd.Function):
+    def __init__(self):
+        super(GradReverse, self).__init__()
+    @ staticmethod
+    def forward(ctx, x, lambda_):
+        ctx.save_for_backward(lambda_)
+        return x.view_as(x)
+    @ staticmethod
+    def backward(ctx, grad_output):
+        lambda_, = ctx.saved_tensors
+        grad_input = grad_output.clone()
+        return - lambda_ * grad_input, None
+
+
+class GradReverseLayer(torch.nn.Module):
+    def __init__(self, lambd):
+        super(GradReverseLayer, self).__init__()
+        self.lambd = lambd
+    def forward(self, x):
+        lam = torch.tensor(self.lambd)
+        return GradReverse.apply(x, lam)
+
+
+class MLPClassifierAlign(nn.Module):
+
+    def __init__(self, input_dim, hidden_dims, num_classes=10, num_domains=3):
+        super(MLPClassifierAlign, self).__init__()
+        self.linears = nn.ModuleList()
+        self.cls_clf = nn.Linear(hidden_dims[-1], num_classes)
+        self.domain_clf = nn.Linear(hidden_dims[-1], num_domains)
+        self.grl = GradReverseLayer(1)
+        self.num_layers = len(hidden_dims)
+
+        for i in range(len(hidden_dims)):
+            in_features = input_dim if i == 0 else hidden_dims[i - 1]
+            self.linears.append(nn.Linear(in_features, hidden_dims[i]))
+
+    def forward(self, x):
+        for i in range(self.num_layers):
+            x = F.relu(self.linears[i](x))
+        return self.cls_clf(x), self.domain_clf(self.grl(x))
