@@ -125,10 +125,10 @@ class GradReverseLayer(torch.nn.Module):
         return GradReverse.apply(x, lam)
 
 
-class MLPClassifierAlign(nn.Module):
+class MLPClassifierReverse(nn.Module):
 
     def __init__(self, input_dim, hidden_dims, num_classes=10, num_domains=3):
-        super(MLPClassifierAlign, self).__init__()
+        super(MLPClassifierReverse, self).__init__()
         self.linears = nn.ModuleList()
         self.cls_clf = nn.Linear(hidden_dims[-1], num_classes)
         self.domain_clf = nn.Linear(hidden_dims[-1], num_domains)

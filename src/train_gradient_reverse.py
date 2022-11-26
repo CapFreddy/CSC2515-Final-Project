@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 from DGDataset import DGDataset
-from model import MLPClassifierAlign
+from model import MLPClassifierReverse
 
 
 def train(model, train_loader, val_loader, test_loader, args):
@@ -24,7 +24,7 @@ def train(model, train_loader, val_loader, test_loader, args):
     train_losses, val_accs, test_accs = [], [], []
     # for epoch in tqdm(range(args.num_epochs), desc='Training'):
     for epoch in range(args.num_epochs):
-        train_loss = train_epoch(model, criterion, train_loader, optimizer, args.device)
+        train_loss = train_epoch(model, args.alpha, criterion, train_loader, optimizer, args.device)
         val_acc = evaluate(model, val_loader, args.device)
         test_acc = evaluate(model, test_loader, args.device)
 
@@ -47,7 +47,7 @@ def train(model, train_loader, val_loader, test_loader, args):
     return result
 
 
-def train_epoch(model, criterion, train_loader, optimizer, device):
+def train_epoch(model, alpha, criterion, train_loader, optimizer, device):
     model.train()
     train_losses = []
     # for x, y_object, y_domain in tqdm(train_loader, desc='Training'):
@@ -57,7 +57,7 @@ def train_epoch(model, criterion, train_loader, optimizer, device):
         y_domain = y_domain.to(device)
 
         logits_cls, logits_domain = model(x)
-        loss = criterion(logits_cls, y_object) + 0.05 * criterion(logits_domain, y_domain)
+        loss = criterion(logits_cls, y_object) + alpha * criterion(logits_domain, y_domain)
         train_losses.append(loss.item())
 
         optimizer.zero_grad()
@@ -118,7 +118,7 @@ def save_json(result, save_path):
 def main(args):
     seed_everything(args.seed)
     train_loader, val_loader, test_loader = build_dataloader(args)
-    model = MLPClassifierAlign(3 * 32 ** 2, args.hidden_dims)
+    model = MLPClassifierReverse(3 * 32 ** 2, args.hidden_dims)
     result = \
         train(model, train_loader, val_loader, test_loader, args)
     np.savez(os.path.join(args.logdir, 'phase1.npz'), **result)
@@ -132,9 +132,10 @@ if __name__ == '__main__':
     parser.add_argument('--target_domain', choices=datasets, default='svhn')
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--alpha', type=float, default=5e-2)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-3)
-    parser.add_argument('--logdir', type=str, default="../results/baseline_align/")
+    parser.add_argument('--logdir', type=str, default="../results/baseline_reverse/")
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
