@@ -11,12 +11,12 @@ from torchmetrics.functional.classification import multiclass_accuracy
 import numpy as np
 from tqdm import tqdm
 
-from parser import parse_args
+from argparser import parse_args
 from DGDataset import DGDataset
 from model import DomainAwareEncoder, ObjectDomainClassifier, LatentObjectClassifier
 
 
-def train_object_domain_model(model, train_loader, val_loader, test_loader, args):
+def train_object_domain_model(model, train_loader, val_loader, args):
     # Method 1/2/3-1
     model.to(args.device)
     criterion = nn.CrossEntropyLoss()
@@ -24,37 +24,33 @@ def train_object_domain_model(model, train_loader, val_loader, test_loader, args
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
 
     best_val_acc = 0.
-    train_losses, val_object_accs, val_domain_accs, test_accs = [], [], [], []
+    train_losses, val_object_accs, val_domain_accs = [], [], []
     for epoch in tqdm(range(args.num_epochs), desc='Training'):
         train_loss = train_epoch(model, criterion, train_loader, optimizer, args.alpha, args.device)
         val_object_acc, val_domain_acc = evaluate(model, val_loader, args.device)
-        test_acc, _ = evaluate(model, test_loader, args.device)
         if val_object_acc > best_val_acc:
             best_val_model = copy.deepcopy(model)
 
         tqdm.write(f'Epoch {epoch} | '
                    f'Loss: {train_loss} | '
                    f'Val Object Acc {val_object_acc} | '
-                   f'Val Domain Acc {val_domain_acc} | '
-                   f'Test Acc {test_acc}')
+                   f'Val Domain Acc {val_domain_acc}')
 
         train_losses.append(train_loss)
         val_object_accs.append(val_object_acc)
         val_domain_accs.append(val_domain_acc)
-        test_accs.append(test_acc)
 
         scheduler.step()
 
     result = {
         'train_loss': np.array(train_losses),
         'val_object_acc': np.array(val_object_accs),
-        'val_domain_accs': np.array(val_domain_accs),
-        'test_acc': np.array(test_accs)
+        'val_domain_accs': np.array(val_domain_accs)
     }
     return best_val_model, result
     
 
-def train_latent_object_model(model, train_loader, val_loader, test_loader, args):
+def train_latent_object_model(model, train_loader, val_loader, args):
     # Method 3-2
     model.to(args.device)
     criterion = nn.CrossEntropyLoss()
@@ -69,29 +65,28 @@ def train_latent_object_model(model, train_loader, val_loader, test_loader, args
         optimizer = optim.Adam(model.object_clf.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
 
-    train_losses, val_object_accs, test_accs = [], [], []
+    best_val_acc = 0.
+    train_losses, val_object_accs = [], []
     for epoch in tqdm(range(args.num_latent_epochs), desc='Training'):
         train_loss = train_epoch(model, criterion, train_loader, optimizer, args.alpha, args.device)
         val_object_acc, _ = evaluate(model, val_loader, args.device)
-        test_acc, _ = evaluate(model, test_loader, args.device)
+        if val_object_acc > best_val_acc:
+            best_val_model = copy.deepcopy(model)
 
         train_losses.append(train_loss)
         val_object_accs.append(val_object_acc)
-        test_accs.append(test_acc)
 
         tqdm.write(f'Epoch {epoch} | '
                    f'Loss: {train_loss} | '
-                   f'Val Object Acc {val_object_acc} | '
-                   f'Test Acc {test_acc}')
+                   f'Val Object Acc {val_object_acc}')
 
         scheduler.step()
 
     result = {
         'train_loss': np.array(train_losses),
-        'val_object_acc': np.array(val_object_accs),
-        'test_acc': np.array(test_accs)
+        'val_object_acc': np.array(val_object_accs)
     }
-    return result
+    return best_val_model, result
 
 
 def train_epoch(model, criterion, train_loader, optimizer, alpha, device):
@@ -118,6 +113,7 @@ def train_epoch(model, criterion, train_loader, optimizer, alpha, device):
         else:
             # Method 3-2
             loss = criterion(logits, y_object)
+
         train_losses.append(loss.item())
 
         optimizer.zero_grad()
@@ -183,9 +179,7 @@ def save_json(result, save_path):
     with open(save_path, 'w') as fout:
         best_val_epoch = result['val_object_acc'].argmax()
         best_val = result['val_object_acc'][best_val_epoch]
-        best_val_test = result['test_acc'][best_val_epoch]
-        best_test = result['test_acc'].max()
-        result = {'best_val': best_val, 'best_val_test': best_val_test, 'best_test': best_test}
+        result = {'best_val': best_val, 'best_val_test': result['best_val_test']}
         json.dump(result, fout, indent=4)
 
 
@@ -199,18 +193,19 @@ def main():
                            args.domain_dim,
                            args.disentangle_layer)
     )
-    best_val_model, result = \
-        train_object_domain_model(model, train_loader, val_loader, test_loader, args)
+    best_val_model, result = train_object_domain_model(model, train_loader, val_loader, args)
+    result['best_val_test'], _ = evaluate(best_val_model, test_loader, args.device)
     np.savez(os.path.join(args.logdir, 'phase1.npz'), **result)
     save_json(result, os.path.join(args.logdir, 'phase1.json'))
 
     if args.disentangle_layer != len(args.hidden_dims):
         # Method 3-2
         model = LatentObjectClassifier(best_val_model.encoder)
-        result = train_latent_object_model(model, train_loader, val_loader, test_loader, args)
+        best_val_model, result = train_latent_object_model(model, train_loader, val_loader, args)
+        result['best_val_test'], _ = evaluate(best_val_model, test_loader, args.device)
         np.savez(os.path.join(args.logdir, 'phase2.npz'), **result)
         save_json(result, os.path.join(args.logdir, 'phase2.json'))
-        
+
 
 if __name__ == '__main__':
     main()

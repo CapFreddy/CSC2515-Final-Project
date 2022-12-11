@@ -17,19 +17,19 @@ class ObjectDomainClassifier(nn.Module):
             object_dim = self.encoder.last_hidden_dim
             domain_dim = self.encoder.last_hidden_dim
 
-        self.clf_object = nn.Linear(object_dim, num_object_classes)
-        self.clf_domain = nn.Linear(domain_dim, num_domain_classes)
+        self.object_clf = nn.Linear(object_dim, num_object_classes)
+        self.domain_clf = nn.Linear(domain_dim, num_domain_classes)
 
     def forward(self, x, perm=None):
         x = self.encoder(x, perm=perm)
         if isinstance(x, tuple):
             # Method 1
-            logits_object = self.clf_object(x[0])
-            logits_domain = self.clf_domain(x[1])
+            logits_object = self.object_clf(x[0])
+            logits_domain = self.domain_clf(x[1])
         else:
             # Method 2/3-1
-            logits_object = self.clf_object(x)
-            logits_domain = self.clf_domain(x)
+            logits_object = self.object_clf(x)
+            logits_domain = self.domain_clf(x)
 
         return logits_object, logits_domain
 
@@ -62,6 +62,7 @@ class MLPClassifier(nn.Module):
     def forward(self, x):
         for i in range(self.num_layers):
             x = F.relu(self.linears[i](x))
+
         return self.clf(x)
 
 
@@ -100,3 +101,53 @@ class DomainAwareEncoder(nn.Module):
             x = F.relu(self.linears[i](x))
 
         return x
+
+
+class GradReverse(torch.autograd.Function):
+    def __init__(self):
+        super(GradReverse, self).__init__()
+
+    @ staticmethod
+    def forward(ctx, x, lambda_):
+        ctx.save_for_backward(lambda_)
+        return x.view_as(x)
+
+    @ staticmethod
+    def backward(ctx, grad_output):
+        lambda_, = ctx.saved_tensors
+        grad_input = grad_output.clone()
+        return - lambda_ * grad_input, None
+
+
+class GradReverseLayer(torch.nn.Module):
+
+    def __init__(self, lambd):
+        super(GradReverseLayer, self).__init__()
+        self.lambd = lambd
+
+    def forward(self, x):
+        lam = torch.tensor(self.lambd)
+        return GradReverse.apply(x, lam)
+
+
+class MLPClassifierReverse(nn.Module):
+
+    def __init__(self, input_dim, hidden_dims, num_classes=10, num_domains=3):
+        super(MLPClassifierReverse, self).__init__()
+        self.linears = nn.ModuleList()
+        self.object_clf = nn.Linear(hidden_dims[-1], num_classes)
+        self.domain_clf = nn.Linear(hidden_dims[-1], num_domains)
+        self.grl = GradReverseLayer(1)
+        self.num_layers = len(hidden_dims)
+
+        for i in range(len(hidden_dims)):
+            in_features = input_dim if i == 0 else hidden_dims[i - 1]
+            self.linears.append(nn.Linear(in_features, hidden_dims[i]))
+
+    def forward(self, x):
+        for i in range(self.num_layers):
+            x = F.relu(self.linears[i](x))
+
+        logits_object = self.object_clf(x)
+        logits_domain = self.domain_clf(self.grl(x))
+        return logits_object, logits_domain

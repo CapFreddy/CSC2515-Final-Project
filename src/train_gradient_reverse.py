@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 from DGDataset import DGDataset
-from model import MLPClassifier
+from model import MLPClassifierReverse
 
 
 def train(model, train_loader, val_loader, args):
@@ -25,17 +25,17 @@ def train(model, train_loader, val_loader, args):
     best_val_acc = 0.
     train_losses, val_accs = [], []
     for epoch in tqdm(range(args.num_epochs), desc='Training'):
-        train_loss = train_epoch(model, criterion, train_loader, optimizer, args.device)
+        train_loss = train_epoch(model, args.alpha, criterion, train_loader, optimizer, args.device)
         val_acc = evaluate(model, val_loader, args.device)
         if val_acc > best_val_acc:
             best_val_model = copy.deepcopy(model)
 
+        train_losses.append(train_loss)
+        val_accs.append(val_acc)
+
         tqdm.write(f'Epoch {epoch} | '
                    f'Loss: {train_loss} | '
                    f'Val Acc {val_acc}')
-
-        train_losses.append(train_loss)
-        val_accs.append(val_acc)
 
         scheduler.step()
 
@@ -46,15 +46,19 @@ def train(model, train_loader, val_loader, args):
     return best_val_model, result
 
 
-def train_epoch(model, criterion, train_loader, optimizer, device):
+def train_epoch(model, alpha, criterion, train_loader, optimizer, device):
     model.train()
     train_losses = []
-    for x, y_object, _ in tqdm(train_loader, desc='Training'):
+    for x, y_object, y_domain in tqdm(train_loader, desc='Training'):
         x = x.view(x.size(0), -1).to(device)
         y_object = y_object.to(device)
+        y_domain = y_domain.to(device)
 
-        logits = model(x)
-        loss = criterion(logits, y_object)
+        logits_object, logits_domain = model(x)
+        loss_object = criterion(logits_object, y_object)
+        loss_domain = criterion(logits_domain, y_domain)
+        loss = loss_object + alpha * loss_domain
+
         train_losses.append(loss.item())
 
         optimizer.zero_grad()
@@ -71,7 +75,7 @@ def evaluate(model, eval_loader, device):
     for x, y_object, _ in tqdm(eval_loader, desc='Evaluating'):
         x = x.view(x.size(0), -1).to(device)
         y_object = y_object.to(device)
-        logits = model(x)
+        logits, _ = model(x)
         ys_object.append(y_object)
         logits_object.append(logits)
 
@@ -108,7 +112,7 @@ def save_json(result, save_path):
 def main(args):
     seed_everything(args.seed)
     train_loader, val_loader, test_loader = build_dataloader(args)
-    model = MLPClassifier(3 * 32**2, args.hidden_dims)
+    model = MLPClassifierReverse(3 * 32 ** 2, args.hidden_dims)
     best_val_model, result = train(model, train_loader, val_loader, args)
     result['best_val_test'] = evaluate(best_val_model, test_loader, args.device)
     np.savez(os.path.join(args.logdir, 'phase1.npz'), **result)
@@ -123,6 +127,7 @@ if __name__ == '__main__':
     # Training
     datasets = ['mnist', 'mnist_m', 'svhn', 'syn']
     parser.add_argument('--target_domain', choices=datasets, required=True)
+    parser.add_argument('--alpha', type=float, default=5e-2)
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=1e-3)
