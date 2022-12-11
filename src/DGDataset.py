@@ -7,10 +7,12 @@ import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
+root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 class DGDataset(Dataset):
 
-    def __init__(self, datasets, mode, root='./digits_dg'):
+    def __init__(self, datasets, mode, root=os.path.join(root_path, 'digits_dg')):
         super(DGDataset, self).__init__()
         assert len(datasets) > 0
 
