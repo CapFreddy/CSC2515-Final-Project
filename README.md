@@ -1,4 +1,4 @@
-# Domain Generalization By Swapping Features
+# Learning Disentangled Features for Domain Generalization
 
 ## Setup
 
