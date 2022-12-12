@@ -1,6 +1,5 @@
 import os
 import copy
-import json
 
 import torch
 import torch.nn as nn
@@ -8,6 +7,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from pytorch_lightning import seed_everything
 from torchmetrics.functional.classification import multiclass_accuracy
+from sklearn.manifold import TSNE
+import seaborn as sns
+import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
@@ -166,6 +168,7 @@ def build_dataloader(args):
     train_dataset, val_dataset, test_dataset = DGDataset(datasets, mode='train'), \
                                                DGDataset(datasets, mode='val'), \
                                                DGDataset([args.target_domain], mode='test')
+
     train_dataset.cache_samples()
     val_dataset.cache_samples()
     test_dataset.cache_samples()
@@ -175,36 +178,64 @@ def build_dataloader(args):
     return train_loader, val_loader, test_loader
 
 
-def save_json(result, save_path):
-    with open(save_path, 'w') as fout:
-        best_val_epoch = result['val_object_acc'].argmax()
-        best_val = result['val_object_acc'][best_val_epoch]
-        result = {'best_val': best_val, 'best_val_test': result['best_val_test']}
-        json.dump(result, fout, indent=4)
+def visualize_features(model, eval_loader, datasets, device, logdir):
+    model.to(device)
+    model.eval()  # Disables permutation
+    feats_object, feats_domain = [], []
+    ys_object, ys_domain = [], []
+    for x, y_object, y_domain in tqdm(eval_loader, desc='Evaluating'):
+        x = x.view(x.size(0), -1).to(device)
+        y_object = y_object.to(device)
+        y_domain = y_domain.to(device)
+        feat_object, feat_domain = model(x, return_feature=True)
+        ys_object.append(y_object)
+        ys_domain.append(y_domain)
+        feats_object.append(feat_object)
+        feats_domain.append(feat_domain)
+
+    ys_object = torch.cat(ys_object).cpu().numpy()
+    ys_domain = torch.cat(ys_domain).cpu().numpy()
+    ys_domain = [datasets[y_domain] for y_domain in ys_domain]
+    feats_object = torch.cat(feats_object).detach().cpu().numpy()
+    feats_domain = torch.cat(feats_domain).detach().cpu().numpy()
+
+    plot_tnse(feats_object, ys_domain, os.path.join(logdir, 'object.png'))
+    plot_tnse(feats_domain, ys_domain, os.path.join(logdir, 'domain.png'))
+
+
+def plot_tnse(features, ys, save_path):
+    tsne = TSNE(n_components=2, random_state=42)
+    features = tsne.fit_transform(features)
+    ax = sns.scatterplot(data={'x': features[:, 0], 'y': features[:, 1]},
+                         x='x', y='y', hue=ys, s=10,
+                         palette=sns.color_palette('hls', len(set(ys))))
+    ax.set(xlabel=None)
+    ax.set(ylabel=None)
+    plt.legend(loc='upper right', title=None)
+    plt.savefig(save_path, dpi=300)
+    plt.clf()
 
 
 def main():
     args = parse_args()
     seed_everything(args.seed)
-    train_loader, val_loader, test_loader = build_dataloader(args)
+    train_loader, val_loader, _ = build_dataloader(args)
     model = ObjectDomainClassifier(
         DomainAwareEncoder(3 * 32**2,
                            args.hidden_dims,
                            args.domain_dim,
                            args.disentangle_layer)
     )
-    best_val_model, result = train_object_domain_model(model, train_loader, val_loader, args)
-    result['best_val_test'], _ = evaluate(best_val_model, test_loader, args.device)
-    np.savez(os.path.join(args.logdir, 'phase1.npz'), **result)
-    save_json(result, os.path.join(args.logdir, 'phase1.json'))
+    best_val_model, _ = train_object_domain_model(model, train_loader, val_loader, args)
+    datasets = ['mnist', 'mnist_m', 'svhn', 'syn']
+    datasets.remove(args.target_domain)
+    visualize_features(best_val_model, val_loader, datasets, args.device, args.logdir)
 
     if args.disentangle_layer != len(args.hidden_dims):
         # Method 3-2
         model = LatentObjectClassifier(best_val_model.encoder)
-        best_val_model, result = train_latent_object_model(model, train_loader, val_loader, args)
-        result['best_val_test'], _ = evaluate(best_val_model, test_loader, args.device)
-        np.savez(os.path.join(args.logdir, 'phase2.npz'), **result)
-        save_json(result, os.path.join(args.logdir, 'phase2.json'))
+        best_val_model, _ = train_latent_object_model(model, train_loader, val_loader, args)
+        visualize_features(best_val_model, val_loader, datasets, args.device, args.logdir)
 
 
 if __name__ == '__main__':

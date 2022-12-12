@@ -3,3 +3,5 @@ __pycache__/
 
 digits_dg/
 result/
+output/
+plot/

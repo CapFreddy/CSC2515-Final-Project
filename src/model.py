@@ -20,8 +20,11 @@ class ObjectDomainClassifier(nn.Module):
         self.object_clf = nn.Linear(object_dim, num_object_classes)
         self.domain_clf = nn.Linear(domain_dim, num_domain_classes)
 
-    def forward(self, x, perm=None):
-        x = self.encoder(x, perm=perm)
+    def forward(self, x, perm=None, return_feature=False):
+        x = self.encoder(x, perm=perm, return_feature=return_feature)
+        if return_feature:
+            return x
+
         if isinstance(x, tuple):
             # Method 1
             logits_object = self.object_clf(x[0])
@@ -32,38 +35,6 @@ class ObjectDomainClassifier(nn.Module):
             logits_domain = self.domain_clf(x)
 
         return logits_object, logits_domain
-
-
-class LatentObjectClassifier(nn.Module):
-
-    def __init__(self, encoder, num_object_classes=10):
-        super(LatentObjectClassifier, self).__init__()
-        self.encoder = encoder
-        self.object_clf = nn.Linear(self.encoder.object_dim, num_object_classes)
-
-    def forward(self, x, perm=None):
-        # Method 3-2
-        object_feat, _ = self.encoder(x, return_feature=True)
-        return self.object_clf(object_feat)
-
-
-class MLPClassifier(nn.Module):
-
-    def __init__(self, input_dim, hidden_dims, num_classes=10):
-        super(MLPClassifier, self).__init__()
-        self.linears = nn.ModuleList()
-        self.clf = nn.Linear(hidden_dims[-1], num_classes)
-        self.num_layers = len(hidden_dims)
-
-        for i in range(len(hidden_dims)):
-            in_features = input_dim if i == 0 else hidden_dims[i - 1]
-            self.linears.append(nn.Linear(in_features, hidden_dims[i]))
-
-    def forward(self, x):
-        for i in range(self.num_layers):
-            x = F.relu(self.linears[i](x))
-
-        return self.clf(x)
 
 
 class DomainAwareEncoder(nn.Module):
@@ -103,7 +74,45 @@ class DomainAwareEncoder(nn.Module):
         return x
 
 
+class LatentObjectClassifier(nn.Module):
+
+    def __init__(self, encoder, num_object_classes=10):
+        super(LatentObjectClassifier, self).__init__()
+        self.encoder = encoder
+        self.object_clf = nn.Linear(self.encoder.object_dim, num_object_classes)
+
+    def forward(self, x, perm=None, return_feature=False):
+        # Method 3-2
+        object_feat, domain_feat = self.encoder(x, return_feature=True)
+        if return_feature:
+            return object_feat, domain_feat
+
+        return self.object_clf(object_feat)
+
+
+class MLPClassifier(nn.Module):
+
+    def __init__(self, input_dim, hidden_dims, num_classes=10):
+        super(MLPClassifier, self).__init__()
+        self.linears = nn.ModuleList()
+        self.clf = nn.Linear(hidden_dims[-1], num_classes)
+        self.num_layers = len(hidden_dims)
+
+        for i in range(len(hidden_dims)):
+            in_features = input_dim if i == 0 else hidden_dims[i - 1]
+            self.linears.append(nn.Linear(in_features, hidden_dims[i]))
+
+    def forward(self, x, return_feature=False):
+        for i in range(self.num_layers):
+            x = F.relu(self.linears[i](x))
+            if i + 1 == return_feature:
+                return x
+
+        return self.clf(x)
+
+
 class GradReverse(torch.autograd.Function):
+
     def __init__(self):
         super(GradReverse, self).__init__()
 
@@ -144,9 +153,12 @@ class MLPClassifierReverse(nn.Module):
             in_features = input_dim if i == 0 else hidden_dims[i - 1]
             self.linears.append(nn.Linear(in_features, hidden_dims[i]))
 
-    def forward(self, x):
+    def forward(self, x, return_feature=False):
         for i in range(self.num_layers):
             x = F.relu(self.linears[i](x))
+
+        if return_feature:
+            return x
 
         logits_object = self.object_clf(x)
         logits_domain = self.domain_clf(self.grl(x))

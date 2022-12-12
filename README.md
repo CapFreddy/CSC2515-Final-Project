@@ -18,6 +18,22 @@ Install PyTorch from https://pytorch.org/get-started/locally/ based on your hard
 
 ## Instruction
 
+### $\text{DisEnt}_{\text{FINAL}}$
+```bash
+python src/train.py --disentangle_layer 3 --target_domain mnist --logdir result/method1
+```
+
+### $\text{DisEnt}_{\text{LATENT}}$
+```bash
+python src/train.py --disentangle_layer 2 --target_domain mnist --logdir result/method2
+```
+
+### $\text{DisEnt}_{\text{FINAL-FINETUNE}}$
+```bash
+python src/train.py --disentangle_layer 2 --finetune --target_domain mnist --logdir result/method3
+```
+
+
 ### Baseline Methods
 
 To run non-neural-network baseline methods for each domains and 3 seeds

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from collections import defaultdict
 
+import numpy as np
 import pandas as pd
 
 
@@ -29,21 +30,24 @@ def parse_experiment_folder(folder_path, result_file):
             result = json.load(fin)['best_val_test'] * 100
         results[dataset].append(result)
 
-    datasets = ['mnist_m', 'svhn', 'syn', 'mnist']
-    results = {dataset: sum(results[dataset]) / len(results[dataset]) for dataset in datasets}
-    results['avg'] = sum(results.values()) / len(results)
+    tot = 0.
+    for dataset in ['mnist_m', 'svhn', 'syn', 'mnist']:
+        mean = np.mean(results[dataset])
+        std = np.std(results[dataset])
+        results[dataset] = u'{}\u00B1{}'.format(round(mean, 2), round(std, 2))
+        tot += mean
+
+    results['avg'] = round(tot / len(results), 2)
     return results
 
 
 baseline = parse_experiment_folder('./result/baseline', 'phase1.json')
 grad_reverse = parse_experiment_folder('./result/grad_reverse', 'phase1.json')
-grad_reverse2 = parse_experiment_folder('./result/grad_reverse-5e-2', 'phase1.json')
 method1 = parse_hyperparameters('./result/method1', 'phase1.json')
 method2 = parse_hyperparameters('./result/method3', 'phase1.json')
 method3 = parse_hyperparameters('./result/method3', 'phase2.json')
 print(baseline)
 print(grad_reverse)
-print(grad_reverse2)
-method1.to_csv('result/method1.csv', index=None)
-method2.to_csv('result/method2.csv', index=None)
-method3.to_csv('result/method3.csv', index=None)
+method1.to_csv('plot/main_exp/method1.csv', index=None)
+method2.to_csv('plot/main_exp/method2.csv', index=None)
+method3.to_csv('plot/main_exp/method3.csv', index=None)
